@@ -1,0 +1,9 @@
+fn main() {
+    return hello()
+}
+
+fn hello() {
+    obj = new Object();
+    obj.test_field = 5;
+    return obj.test_field
+}
