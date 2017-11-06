@@ -1,0 +1,24 @@
+fn main() {
+    x = object();
+    y = object();
+    z = object();
+
+    counter = 0;
+
+    for(i = 0; i<1000000; i = i + 1){
+        x.a = i;
+        x.b = i + x.a;
+        x.c = i + x.a + x.b;
+
+        y.a = i;
+        y.b = i + y.a;
+        y.c = i + y.a + y.b;
+
+        z.a = i;
+        z.b = i + z.a;
+        z.c = i + z.a + z.b;
+
+        counter = counter + x.a + x.b + x.c + y.a + y.b + y.c + z.a + z.b + z.c
+    };
+    return counter
+}
