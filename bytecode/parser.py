@@ -206,6 +206,9 @@ def exp_assign(p):
 def p_empty(p):
     pass
 
+@pg.error
+def error_handler(token):
+    raise ValueError("Illegal use of  %s. Line: %s" % (token.gettokentype(), token.getsourcepos()))
 
 def parse_input(source):
     lexer = lg.build()
