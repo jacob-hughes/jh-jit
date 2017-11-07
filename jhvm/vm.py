@@ -6,7 +6,14 @@ from jhvm.opcodes import *
 from jhvm.util import bail
 
 from rpython.rlib.jit import JitDriver
-jitdriver = JitDriver(greens = ['pc', 'bytecode'], reds = ['frame', 'self'])
+def get_location(pc, bytecode):
+    assert pc >= 0
+    return "LineNo:%s Instr:%s" % (pc + 1, OP_CODES[int(bytecode[pc])])
+
+jitdriver = JitDriver(greens = ['pc', 'bytecode'],
+                      reds = ['frame', 'self'],
+                      get_printable_location = get_location
+                     )
 
 def jitpolicy(driver):
     from rpython.jit.codewriter.policy import JitPolicy
