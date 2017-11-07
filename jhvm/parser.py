@@ -3,7 +3,7 @@
 
 from __future__ import absolute_import
 
-from bytecode.ast import *
+from jhvm.ast import *
 from rply import ParserGenerator
 from rply import LexerGenerator
 

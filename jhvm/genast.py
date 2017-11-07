@@ -2,16 +2,8 @@
 # -*- coding: utf-8 -*-
 from __future__ import absolute_import
 
-from bytecode.parser import parse_input
-from bytecode.ast import *
-
-import opcodes as op
-
-class BytecodeError(Exception):
-    """ Generic error thrown when issues arise while trying to convert AST into
-        list of bytecode instructions
-    """
-    pass
+from jhvm.parser import parse_input
+from jhvm.ast import *
 
 def generate_bytecode(ast):
     context = GeneratorContext()

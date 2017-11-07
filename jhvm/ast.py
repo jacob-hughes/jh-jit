@@ -1,7 +1,7 @@
 # vim: ai ts=4 sts=4 et sw=4
 # -*- coding: utf-8 -*-
 from __future__ import absolute_import
-from opcodes import *
+from jhvm.opcodes import *
 
 class Node(object):
     def __repr__(self):

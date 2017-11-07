@@ -1,8 +1,8 @@
 # vim: ai ts=4 sts=4 et sw=4
 # -*- coding: utf-8 -*-
 import sys
-from bytecode.parser import parse_input
-from bytecode.gen import generate_bytecode
+from jhvm.parser import parse_input
+from jhvm.genast import generate_bytecode
 
 def usage():
     print >> sys.stderr, 'Usage: compiler.py filename.jh'

@@ -3,13 +3,12 @@
 from __future__ import absolute_import
 
 import unittest
-from bytecode.parser import parse_input
-from bytecode.gen import generate_bytecode
-from jit.vm import VirtualMachine as VM
+from jhvm.parser import parse_input
+from jhvm.genast import generate_bytecode
+from jhvm.vm import VirtualMachine as VM
+from jhvm.opcodes import *
 
-from opcodes import *
-
-from jit.vm import Int
+from jhvm.vm import Int
 
 class TestVirtualMachine(unittest.TestCase):
 

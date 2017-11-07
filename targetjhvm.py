@@ -4,7 +4,7 @@ from __future__ import absolute_import
 
 import os
 import sys
-from jit.vm import VirtualMachine
+from jhvm.vm import VirtualMachine
 from rpython.rlib.streamio import open_file_as_stream
 
 def usage():

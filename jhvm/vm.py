@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 from __future__ import absolute_import
 
-from opcodes import *
-from jit.util import bail
+from jhvm.opcodes import *
+from jhvm.util import bail
 
 from rpython.rlib.jit import JitDriver
 jitdriver = JitDriver(greens = ['pc', 'bytecode'], reds = ['frame', 'self'])
