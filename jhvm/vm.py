@@ -5,13 +5,14 @@ from __future__ import absolute_import
 from jhvm.opcodes import *
 from jhvm.util import bail
 
-from rpython.rlib.jit import JitDriver
+from rpython.rlib import jit
 def get_location(pc, bytecode):
     assert pc >= 0
     return "LineNo:%s Instr:%s" % (pc + 1, OP_CODES[int(bytecode[pc])])
 
-jitdriver = JitDriver(greens = ['pc', 'bytecode'],
+jitdriver = jit.JitDriver(greens = ['pc', 'bytecode'],
                       reds = ['frame', 'self'],
+                      is_recursive = True,
                       get_printable_location = get_location
                      )
 
@@ -22,9 +23,31 @@ def jitpolicy(driver):
 class VM_Obj(object):
     pass
 
+class ObjMap(object):
+    _immutable_fields_ = ('field_indexes', 'other_maps')
+    def __init__(self):
+        self.field_indexes = {}
+        self.other_maps = {}
+
+    @jit.elidable
+    def get_field_index(self, field_name):
+        return self.field_indexes.get(field_name, -1)
+
+    @jit.elidable
+    def new_map_with_additional_field(self, field_name):
+        if field_name not in self.other_maps:
+            new_map = ObjMap()
+            new_map.field_indexes.update(self.field_indexes)
+            new_map.field_indexes[field_name] = len(self.field_indexes)
+            self.other_maps[field_name] = new_map
+        return self.other_maps[field_name]
+
+EMPTY_MAP = ObjMap()
+
 class Obj(VM_Obj):
-    def __init__(self, fields = None):
-        self.fields = fields or {}
+    def __init__(self):
+        self.field_values = []
+        self.map = EMPTY_MAP
 
     def __eq__(self, other):
         return self.__dict__ == other.__dict__
@@ -35,20 +58,21 @@ class Obj(VM_Obj):
     def __repr__(self):
         return '{} {}'.format(self.__class__.__name__, self.__dict__)
 
-    def set_field(self, field, value):
-        try:
-            self.fields[field] = value
-        except IndexError:
-            for _ in range(len(self.fields) -1, field):
-                self.fields.append(None)
-            self.fields[field] = value
+    def set_field(self, field_name, value):
+        _map = jit.promote(self.map)
+        index = _map.get_field_index(field_name)
+        if index != -1:
+            self.field_values[index] = value
+            return
+        self.map = _map.new_map_with_additional_field(field_name)
+        self.field_values.append(value)
 
-    def get_field(self, field):
-        try:
-            return self.fields[field]
-        except IndexError:
-            bail('FieldException: Field does not exist')
-
+    def get_field(self, field_name):
+        _map = jit.promote(self.map)
+        index = _map.get_field_index(field_name)
+        if index != -1:
+            return self.field_values[index]
+        raise AttributeError(field_name)
 
 class Int(Obj):
     def __init__(self, value):
@@ -138,9 +162,8 @@ class Frame(VM_Obj):
         exp = self.pop()
         return exp.value
 
-    def var(self):
-        name = self.pop()
-        value = self.variables[name.value]
+    def var(self, index):
+        value = self.variables[index]
         self.push(value)
 
     def new(self, vm):
@@ -151,15 +174,13 @@ class Frame(VM_Obj):
 
     def set_field(self, field,  vm):
         value = self.pop()
-        self.var()
-        ref = self.pop().value
-        obj = vm.heap[ref]
+        obj_ref = self.pop().value
+        obj = vm.heap[obj_ref]
         obj.set_field(field, value)
 
     def get_field(self, field, vm):
-        self.var()
-        ref = self.pop().value
-        obj = vm.heap[ref]
+        obj_ref = self.pop().value
+        obj = vm.heap[obj_ref]
         val = obj.get_field(field)
         self.push(val)
 
@@ -214,8 +235,6 @@ class VirtualMachine(object):
         return self._interp(self.instructions, main_frame)
 
     def _interp(self, bytecode, frame):
-        # Begin by creating the stack frame for the main method and pushing
-        # on stack.
         pc = 0
 
         # Begin program interpreter loop
@@ -277,7 +296,7 @@ class VirtualMachine(object):
                 pc = ret_address
                 continue
             elif instr == VAR:
-                frame.var()
+                frame.var(int(bytecode[pc + 1]))
             elif instr == ASSIGN:
                 frame.assign()
             elif instr == CONST_STR:

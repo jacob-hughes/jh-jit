@@ -113,7 +113,7 @@ HAS_ARGS.append(False)
 
 VAR = "19"
 OP_CODES.append('VAR')
-HAS_ARGS.append(False)
+HAS_ARGS.append(True)
 
 CONST_STR = "20"
 OP_CODES.append('CONST_STR')

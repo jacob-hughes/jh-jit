@@ -1,0 +1,7 @@
+fn main() {
+    x = object();
+    for(i = 0; i < 1; i = i + 1) {
+        x.y = 5
+    };
+    return x.y
+}

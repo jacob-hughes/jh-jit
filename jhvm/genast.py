@@ -18,10 +18,19 @@ class GeneratorContext(object):
         self.func_vars = []
         pass
 
-    def emit_bc(self, opcode, arg = None):
-        self.code.append(opcode)
-        if arg is not None:
-            self.code.append(arg)
+    def emit_bc(self, opcode):
+        self.code.append(str(opcode))
+
+    def emit_bc_arg_int(self, opcode, arg):
+        conv_opcode = str(opcode)
+        conv_arg = str(arg)
+        assert isinstance(conv_opcode, str)
+        assert isinstance(conv_arg, str)
+        self.code.extend([conv_opcode, conv_arg])
+
+    def emit_bc_arg_str(self, opcode, arg):
+        conv_opcode = str(opcode)
+        self.code.extend([conv_opcode, arg])
 
     def register_function(self, name, args):
         self.func_names.append(name)
@@ -48,14 +57,12 @@ class GeneratorContext(object):
         # replace them with index of bytecode instr. to jump to.
         labels = {}
         for i, instr in enumerate(self.code):
-            if isinstance(instr, str):
-                if instr.endswith(':'):
-                    del self.code[i]
-                    labels.update({instr[:-1] : i})
+            if instr.endswith(':'):
+                del self.code[i]
+                labels.update({instr[:-1] : str(i)})
         for i, instr in enumerate(self.code):
             try:
-                if isinstance(instr, str):
-                    self.code[i] = labels[instr]
+                self.code[i] = labels[instr]
             except KeyError: pass
 
 
