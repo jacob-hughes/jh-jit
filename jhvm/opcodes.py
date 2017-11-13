@@ -69,13 +69,13 @@ HAS_ARGS.append(False)
 # objectref, index, val ->
 SET_FIELD = "9"
 OP_CODES.append('SET_FIELD')
-HAS_ARGS.append(False)
+HAS_ARGS.append(True)
 
 # Pops field index and objectref and returns object's field value
 # index, objectref -> val
 GET_FIELD = "10"
 OP_CODES.append('GET_FIELD')
-HAS_ARGS.append(False)
+HAS_ARGS.append(True)
 
 # Duplicates the value on the top of the stack
 # val -> val, val

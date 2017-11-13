@@ -1,51 +1,13 @@
 # vim: ai ts=4 sts=4 et sw=4
 # -*- coding: utf-8 -*-
-
 from __future__ import absolute_import
+from rply import ParserGenerator
 
 from jhvm.ast import *
-from rply import ParserGenerator
-from rply import LexerGenerator
-
-lg = LexerGenerator()
-
-token_rules = [
-    ('ADD', '\+'),
-    ('SUB', '\-'),
-    ('LPAREN', '\('),
-    ('RPAREN', '\)'),
-    ('LBRACE', '\{'),
-    ('RBRACE', '\}'),
-    ('LSQUARE', '\['),
-    ('RSQUARE', '\]'),
-    ('DOT', '\.'),
-    ('COMMA', ','),
-    ('SEMICOLON', ';'),
-    ('EQ', '=='),
-    ('ASSIGN', '='),
-    ('LT', '<'),
-    ('TO', 'to(?!\w)'),
-    ('FOR', 'for(?!\w)'),
-    ('IF', 'if(?!\w)'),
-    ('ELSE', 'else(?!\w)'),
-    ('WHILE', 'while(?!\w)'),
-    ('FN', 'fn(?!\w)'),
-    ('OBJECT', 'object(?!\w)'),
-    ('RETURN', 'return(?!\w)'),
-    ('ID', '[a-zA-Z_][a-zA-Z_0-9]*'),
-    ('NUMBER', '\d+'),
-]
-
-for token, rule in token_rules:
-    lg.add(token,rule)
-
-lg.ignore('\s')
-
-def get_lexer():
-    lexer = lg.build()
+from jhvm.lexer import token_names, lex
 
 pg = ParserGenerator(
-    [token for token, _ in token_rules],
+    token_names,
     precedence = [
         ('right', [ 'ASSIGN']),
         ('left', ['ADD', 'SUB', 'EQ', 'LT']),
@@ -56,30 +18,29 @@ pg = ParserGenerator(
 def program(p):
     return Program(p[0])
 
-
 @pg.production('functions : functions function')
-@pg.production('functions : function')
 def functions_single(p):
-    if len(p) == 2:
-        return p[0] + [p[1]]
-    else:
+    return p[0] + [p[1]]
+
+@pg.production('functions : function')
+def functions(p):
         return [p[0]]
 
-@pg.production('function : FN ID LPAREN params RPAREN LBRACE block RBRACE')
+@pg.production('function : FN ID LPAREN param_list RPAREN LBRACE block RBRACE')
 def function(p):
     return Function(p[1].getstr(), p[3], p[6])
 
-@pg.production('params : one_or_more_params')
+@pg.production('param_list : non_empty_param_list')
 def params(p):
     return p[0]
 
-@pg.production('params : empty')
+@pg.production('param_list : empty')
 def params_empty(p):
     return []
 
-@pg.production('one_or_more_params : one_or_more_params COMMA ID')
-def one_or_more_params(p):
-        return p[0] + [Var(p[2].getstr())]
+@pg.production('non_empty_param_list : non_empty_param_list COMMA ID')
+def non_empty_param_list(p):
+        return list(p[0]).append(Var(p[2].getstr()))
 
 @pg.production('one_or_more_params : ID')
 def one_or_more_params_id(p):
@@ -90,12 +51,12 @@ def block(p):
     return Block(p[0])
 
 @pg.production('block_contents : block_contents SEMICOLON fragment')
+def block_contents_multi_stm(p):
+    return p[0] + [p[2]]
+
 @pg.production('block_contents : fragment')
-def block_contents(p):
-    if len(p) == 3:
-        return p[0] + [p[2]]
-    else:
-        return [p[0]]
+def block_contents_single_stm(p):
+    return [p[0]]
 
 @pg.production('fragment : statement')
 def fragment_statement(p):
@@ -128,11 +89,6 @@ def exp_field_accessor(p):
 @pg.production('exp : ID DOT ID ASSIGN exp')
 def exp_field_setter(p):
     return FieldSetter(p[0].getstr(), p[2].getstr(), p[4])
-
-@pg.production('exp : ID LSQUARE exp RSQUARE ASSIGN exp')
-def exp_set_field(p):
-    return ObjSetter(p[0].getstr(), p[2], p[5])
-
 
 @pg.production('exp : NUMBER')
 def exp_number(p):
@@ -176,11 +132,11 @@ def args_empty(p):
 
 @pg.production('one_or_more_args : one_or_more_args COMMA exp')
 def one_or_more_args(p):
-        return p[0] + [p[2]]
+        return list(p[0] + [p[2]])
 
 @pg.production('one_or_more_args : exp')
 def one_or_more_args_exp(p):
-    return [p[0]]
+    return list(p[0])
 
 @pg.production('exp : exp binop exp')
 def binop(p):
@@ -210,7 +166,7 @@ def p_empty(p):
 def error_handler(token):
     raise ValueError("Illegal use of  %s. Line: %s" % (token.gettokentype(), token.getsourcepos()))
 
+parser = pg.build()
+
 def parse_input(source):
-    lexer = lg.build()
-    parser = pg.build()
-    return parser.parse(lexer.lex(source))
+    return parser.parse(lex(source))

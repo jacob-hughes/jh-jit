@@ -3,7 +3,13 @@
 from __future__ import absolute_import
 from jhvm.opcodes import *
 
+_label_counter = 0
+
+def next_label():
+    return _label_counter + 1
+
 class Node(object):
+
     def __repr__(self):
         return '{}({})'.format(self.__class__.__name__, self.__dict__)
 
@@ -43,8 +49,9 @@ class If(Statement):
         self.cond = cond
         self.then_body = then_body
 
-        self._then = 'then_%s' % id(self)
-        self._exit = 'exit_%s' % id(self)
+        label_no = next_label()
+        self._then = 'then_%s' % label_no
+        self._exit = 'exit_%s' % label_no
         self._then_def = self._then + ':'
         self._exit_def = self._exit + ':'
 
@@ -60,9 +67,10 @@ class IfElse(Statement):
         self.then_body = then_body
         self.else_body = else_body
 
-        self._then = 'then_%s' % id(self)
-        self._else = 'else_%s' % id(self)
-        self._exit = 'exit_%s' % id(self)
+        label_no = next_label()
+        self._then = 'then_%s' % label_no
+        self._else = 'else_%s' % label_no
+        self._exit = 'exit_%s' % label_no
         self._then_def = self._then + ':'
         self._else_def = self._else + ':'
         self._exit_def = self._exit + ':'
@@ -129,8 +137,9 @@ class For(Node):
         self.step = step
         self.body = body
 
-        self._entry = 'entry_%s' % id(self)
-        self._exit = 'exit_%s' % id(self)
+        label_no = next_label()
+        self._entry = 'entry_%s' % label_no
+        self._exit = 'exit_%s' % label_no
         self._entry_def = self._entry + ':'
         self._exit_def = self._exit + ':'
 
@@ -176,8 +185,7 @@ class FieldAccessor(Exp):
 
     def _compile(self, gen):
         gen.emit_bc(CONST_INT, gen.register_num_for_var(self.obj_var))
-        gen.emit_bc(CONST_STR, self.field)
-        gen.emit_bc(GET_FIELD)
+        gen.emit_bc(GET_FIELD, self.field)
 
 class FieldSetter(Exp):
     def __init__(self, obj_var, field, exp):
@@ -187,9 +195,8 @@ class FieldSetter(Exp):
 
     def _compile(self, gen):
         gen.emit_bc(CONST_INT, gen.register_num_for_var(self.obj_var))
-        gen.emit_bc(CONST_STR, self.field)
         self.exp.compile(gen)
-        gen.emit_bc(SET_FIELD)
+        gen.emit_bc(SET_FIELD, self.field)
 
 class Obj(Exp):
     def __init__(self, fields, values):

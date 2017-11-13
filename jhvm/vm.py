@@ -149,16 +149,14 @@ class Frame(VM_Obj):
         ref = Int(len(vm.heap) - 1)
         self.push(ref)
 
-    def set_field(self, vm):
+    def set_field(self, field,  vm):
         value = self.pop()
-        field = self.pop().str_val
         self.var()
         ref = self.pop().value
         obj = vm.heap[ref]
         obj.set_field(field, value)
 
-    def get_field(self, vm):
-        field = self.pop().str_val
+    def get_field(self, field, vm):
         self.var()
         ref = self.pop().value
         obj = vm.heap[ref]
@@ -256,9 +254,9 @@ class VirtualMachine(object):
             elif instr == NEW:
                 frame.new(self)
             elif instr == GET_FIELD:
-                frame.get_field(self)
+                frame.get_field(str(bytecode[pc+1]), self)
             elif instr == SET_FIELD:
-                frame.set_field(self)
+                frame.set_field(str(bytecode[pc+1]), self)
             elif instr == DUP:
                 frame.dup()
             elif instr == SWAP:
@@ -300,7 +298,7 @@ class VirtualMachine(object):
         # instantiated frame. It will then push this new frame to the VMs main
         # execution stack.
         return_address = pc + 2
-        variables = []
+        variables = [None] * 5
         arg_count = caller_frame.pop().value
         for _ in range(arg_count):
             arg = caller_frame.pop()
