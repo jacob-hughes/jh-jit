@@ -5,7 +5,8 @@ from __future__ import absolute_import
 from jhvm.opcodes import *
 from jhvm.util import bail
 
-from rpython.rlib.jit import JitDriver
+from rpython.rlib import jit
+from rpython.rlib.debug import make_sure_not_resized
 def get_location(pc, bytecode):
     assert pc >= 0
     return "LineNo:%s Instr:%s" % (pc + 1, OP_CODES[int(bytecode[pc])])
@@ -22,15 +23,47 @@ def jitpolicy(driver):
 class VM_Obj(object):
     pass
 
+class VM_Objspace(VM_Obj):
+    def add(self, other):
+        raise NotImplementedError()
+
+    def sub(self, other):
+        raise NotImplementedError()
+
+    def eq(self, other):
+        raise NotImplementedError()
+
+    def neq(self, other):
+        raise NotImplementedError()
+
+    def lt(self, other):
+        raise NotImplementedError()
+
+class ObjMap(object):
+    _immutable_fields_ = ('field_indexes', 'other_maps')
+    def __init__(self):
+        self.field_indexes = {}
+        self.other_maps = {}
+
+    @jit.elidable
+    def get_field_index(self, field_name):
+        return self.field_indexes.get(field_name, -1)
+
+    @jit.elidable
+    def new_map_with_additional_field(self, field_name):
+        if field_name not in self.other_maps:
+            new_map = ObjMap()
+            new_map.field_indexes.update(self.field_indexes)
+            new_map.field_indexes[field_name] = len(self.field_indexes)
+            self.other_maps[field_name] = new_map
+        return self.other_maps[field_name]
+
+EMPTY_MAP = ObjMap()
+
 class Obj(VM_Obj):
     def __init__(self, fields = None):
         self.fields = fields or {}
 
-    def __eq__(self, other):
-        return self.__dict__ == other.__dict__
-
-    def __neq__(self, other):
-        return not self.__eq__(other)
 
     def __repr__(self):
         return '{} {}'.format(self.__class__.__name__, self.__dict__)
@@ -50,93 +83,117 @@ class Obj(VM_Obj):
             bail('FieldException: Field does not exist')
 
 
-class Int(Obj):
-    def __init__(self, value):
-        self.value = value
+class Int(VM_Objspace):
+    _immutable_fields_ = ['int_val']
+    def __init__(self, int_val):
+        self.int_val = int_val
 
     def add(self, other):
-        return Int(self.value + other.value)
+        assert isinstance(other, Int)
+        return Int(self.int_val + other.int_val)
 
     def sub(self, other):
-        return Int(self.value - other.value)
+        assert isinstance(other, Int)
+        return Int(self.int_val - other.int_val)
 
     def eq(self, other):
-        return Bool(self.value == other.value)
+        assert isinstance(other, Int)
+        return Bool(self.int_val == other.int_val)
 
     def neq(self, other):
+        assert isinstance(other, Int)
         is_neq = not self.eq(other)
         return Bool(is_neq)
 
     def lt(self, other):
-        return Bool(self.value < other.value)
+        assert isinstance(other, Int)
+        return Bool(self.int_val < other.int_val)
 
-class StrLiteral(Obj):
+class StrLiteral(VM_Objspace):
+    _immutable_fields_ = ['str_val']
     def __init__(self, str_val):
         self.str_val = str_val
 
-class Bool(Obj):
-    def __init__(self, value):
-        self.value = value
+class Bool(VM_Objspace):
+    _immutable_fields_ = ['bool_val']
+    def __init__(self, bool_val):
+        self.bool_val = bool_val
 
 class Frame(VM_Obj):
     def __init__(self, return_address, variables, caller_frame):
         self.return_address = return_address
         self.variables = variables
-        self.stack = []
+        self.stack = [None] * 128
+        self.sp = 0
         self.caller_frame = caller_frame
         self.next_frame = None
+
+        make_sure_not_resized(self.stack)
+
 
     def __repr__(self):
         return 'F: Stack{} Vars{}'.format(self.stack, self.variables)
 
     def pop(self):
-        return self.stack.pop()
+        self.sp -= 1
+        val = self.stack[self.sp]
+        self.stack[self.sp] = None
+        return val
 
     def push(self, val):
-        self.stack.append(val)
+        self.stack[self.sp] = val
+        self.sp += 1
 
     def const_int(self, val):
-        self.stack.append(Int(int(val)))
+        self.stack[self.sp] = Int(int(val))
+        self.sp += 1
 
     def const_str(self, val):
         assert isinstance(val, str)
-        self.stack.append(StrLiteral(val))
+        self.stack[self.sp] = StrLiteral(int(val))
+        self.sp += 1
 
     def add(self):
         o2 = self.pop()
         o1 = self.pop()
-        assert isinstance(o1, Obj)
+        assert isinstance(o1, VM_Objspace)
         val = o1.add(o2)
         self.push(val)
 
     def sub(self):
         o2 = self.pop()
         o1 = self.pop()
-        assert isinstance(o1, Obj)
+        assert isinstance(o1, VM_Objspace)
         val = o1.sub(o2)
         self.push(val)
 
     def eq(self):
         o2 = self.pop()
         o1 = self.pop()
-        assert isinstance(o1, Obj)
+        assert isinstance(o1, VM_Objspace)
         val = o1.eq(o2)
         self.push(val)
 
     def lt(self):
         o2 = self.pop()
         o1 = self.pop()
-        assert isinstance(o1, Obj)
+        assert isinstance(o1, VM_Objspace)
         val = o1.lt(o2)
         self.push(val)
 
     def jump_if_true(self):
         exp = self.pop()
-        return exp.value
+        if isinstance(exp, Bool):
+            return exp.bool_val
+        else:
+            raise NotImplementedError()
 
     def jump_if_false(self):
         exp = self.pop()
-        return exp.value
+        if isinstance(exp, Bool):
+            return exp.bool_val
+        else:
+            raise NotImplementedError()
 
     def var(self):
         name = self.pop()
@@ -151,19 +208,21 @@ class Frame(VM_Obj):
 
     def set_field(self, vm):
         value = self.pop()
-        field = self.pop().str_val
-        self.var()
-        ref = self.pop().value
-        obj = vm.heap[ref]
-        obj.set_field(field, value)
+        obj_ref = self.pop()
+        if isinstance(obj_ref, Int):
+            obj = vm.heap[obj_ref.int_val]
+            obj.set_field(field, value)
+        else:
+            raise NotImplementedError()
 
-    def get_field(self, vm):
-        field = self.pop().str_val
-        self.var()
-        ref = self.pop().value
-        obj = vm.heap[ref]
-        val = obj.get_field(field)
-        self.push(val)
+    def get_field(self, field, vm):
+        obj_ref = self.pop()
+        if isinstance(obj_ref, Int):
+            obj = vm.heap[obj_ref.int_val]
+            val = obj.get_field(field)
+            self.push(val)
+        else:
+            raise NotImplementedError()
 
 
     def dup(self):
@@ -181,17 +240,16 @@ class Frame(VM_Obj):
 
     def assign(self):
         value = self.pop()
-        var = self.pop().value
-        if len(self.variables) == var:
-            self.variables.append(value)
+        var = self.pop()
+        if isinstance(var, Int):
+            self.variables[var.int_val] = value
         else:
-            self.variables[var] = value
-        self.push(value)
+            raise NotImplementedError()
 
     def neq(self):
         o2 = self.pop()
         o1 = self.pop()
-        assert isinstance(o1, Obj)
+        assert isinstance(o1, VM_Objspace)
         val = o1.neq(o2)
         self.push(val)
 
@@ -300,14 +358,17 @@ class VirtualMachine(object):
         # instantiated frame. It will then push this new frame to the VMs main
         # execution stack.
         return_address = pc + 2
-        variables = []
-        arg_count = caller_frame.pop().value
-        for _ in range(arg_count):
-            arg = caller_frame.pop()
-            variables.append(arg)
-        new_frame = Frame(return_address, variables, caller_frame)
-        caller_frame.push(new_frame)
-        return new_frame
+        variables = [None] * var_size
+        arg_count = caller_frame.pop()
+        if isinstance(arg_count, Int):
+            for i in range(arg_count.int_val):
+                arg = caller_frame.pop()
+                variables[i] = arg
+            new_frame = Frame(return_address, variables, caller_frame)
+            caller_frame.push(new_frame)
+            return new_frame
+        else:
+            raise NotImplementedError()
 
 
     def pop_frame(self):

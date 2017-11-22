@@ -123,6 +123,10 @@ JUMP_IF_FALSE = "21"
 OP_CODES.append('JUMP_IF_FALSE')
 HAS_ARGS.append(True)
 
+START_ITER = "22"
+OP_CODES.append('START_ITER')
+HAS_ARGS.append(False)
+
 BINOP_TO_OPCODE = {
     'ADD' : ADD,
     'SUB' : SUB,
