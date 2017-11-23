@@ -127,7 +127,7 @@ class Bool(VM_Objspace):
 
 class Frame(VM_Obj):
     _immutable_fields_ = ['stack', 'return_address', 'caller_frame', 'variables' ]
-    _virtualizable_ = ['return_address', 'sp', 'caller_frame', 'stack[*]' ]
+    _virtualizable_ = ['return_address', 'sp', 'caller_frame', 'stack[*]', 'variables[*]' ]
 
     def __init__(self, return_address, variables, caller_frame):
         self = jit.hint(self, access_directly=True, fresh_virtualizable=True)
@@ -200,8 +200,9 @@ class Frame(VM_Obj):
             raise NotImplementedError()
 
     def var(self, index):
-        value = self.variables[index]
-        self.push(value)
+        assert index >= 0
+        obj = self.variables[index]
+        self.push(obj)
 
     def new(self, vm):
         obj = Obj()
@@ -240,7 +241,9 @@ class Frame(VM_Obj):
         value = self.pop()
         var = self.pop()
         if isinstance(var, Int):
-            self.variables[var.int_val] = value
+            index = var.int_val
+            assert index > 0
+            self.variables[index] = value
         else:
             raise NotImplementedError()
 
