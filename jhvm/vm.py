@@ -11,8 +11,9 @@ def get_location(pc, bytecode):
     assert pc >= 0
     return "LineNo:%s Instr:%s" % (pc + 1, OP_CODES[int(bytecode[pc])])
 
-jitdriver = JitDriver(greens = ['pc', 'bytecode'],
+jitdriver = jit.JitDriver(greens = ['pc', 'bytecode'],
                       reds = ['frame', 'self'],
+                      virtualizables=['frame'],
                       get_printable_location = get_location
                      )
 
@@ -61,27 +62,29 @@ class ObjMap(object):
 EMPTY_MAP = ObjMap()
 
 class Obj(VM_Obj):
-    def __init__(self, fields = None):
-        self.fields = fields or {}
+    def __init__(self):
+        self.field_values = []
+        self.map = EMPTY_MAP
 
 
     def __repr__(self):
         return '{} {}'.format(self.__class__.__name__, self.__dict__)
 
-    def set_field(self, field, value):
-        try:
-            self.fields[field] = value
-        except IndexError:
-            for _ in range(len(self.fields) -1, field):
-                self.fields.append(None)
-            self.fields[field] = value
+    def set_field(self, field_name, value):
+        _map = jit.promote(self.map)
+        index = _map.get_field_index(field_name)
+        if index != -1:
+            self.field_values[index] = value
+            return
+        self.map = _map.new_map_with_additional_field(field_name)
+        self.field_values.append(value)
 
-    def get_field(self, field):
-        try:
-            return self.fields[field]
-        except IndexError:
-            bail('FieldException: Field does not exist')
-
+    def get_field(self, field_name):
+        _map = jit.promote(self.map)
+        index = _map.get_field_index(field_name)
+        if index != -1:
+            return self.field_values[index]
+        raise AttributeError(field_name)
 
 class Int(VM_Objspace):
     _immutable_fields_ = ['int_val']
@@ -120,7 +123,11 @@ class Bool(VM_Objspace):
         self.bool_val = bool_val
 
 class Frame(VM_Obj):
+    _immutable_fields_ = ['stack', 'return_address', 'caller_frame', 'variables' ]
+    _virtualizable_ = ['return_address', 'sp', 'caller_frame', 'stack[*]' ]
+
     def __init__(self, return_address, variables, caller_frame):
+        self = jit.hint(self, access_directly=True, fresh_virtualizable=True)
         self.return_address = return_address
         self.variables = variables
         self.stack = [None] * 128
@@ -128,30 +135,36 @@ class Frame(VM_Obj):
         self.caller_frame = caller_frame
         self.next_frame = None
 
-        make_sure_not_resized(self.stack)
+        # make_sure_not_resized(self.stack)
 
 
-    def __repr__(self):
-        return 'F: Stack{} Vars{}'.format(self.stack, self.variables)
+    # def __repr__(self):
+    #     return 'F: Stack{} Vars{}'.format(self.stack, self.variables)
 
     def pop(self):
-        self.sp -= 1
-        val = self.stack[self.sp]
-        self.stack[self.sp] = None
+        index = jit.hint(self.sp, promote=True) -1
+        assert index >= 0
+        val = self.stack[index]
+        self.stack[index] = None
+        self.sp = index
         return val
 
     def push(self, val):
-        self.stack[self.sp] = val
+        index = jit.hint(self.sp, promote=True)
+        self.stack[index] = val
         self.sp += 1
 
     def const_int(self, val):
-        self.stack[self.sp] = Int(int(val))
+        index = jit.hint(self.sp, promote=True)
+        self.stack[index] = Int(int(val))
         self.sp += 1
 
     def const_str(self, val):
+        index = jit.hint(self.sp, promote=True)
         assert isinstance(val, str)
-        self.stack[self.sp] = StrLiteral(int(val))
+        self.stack[index] = StrLiteral(int(val))
         self.sp += 1
+        assert self.sp < 128
 
     def add(self):
         o2 = self.pop()
@@ -195,9 +208,8 @@ class Frame(VM_Obj):
         else:
             raise NotImplementedError()
 
-    def var(self):
-        name = self.pop()
-        value = self.variables[name.value]
+    def var(self, index):
+        value = self.variables[index]
         self.push(value)
 
     def new(self, vm):
@@ -206,7 +218,7 @@ class Frame(VM_Obj):
         ref = Int(len(vm.heap) - 1)
         self.push(ref)
 
-    def set_field(self, vm):
+    def set_field(self, field,  vm):
         value = self.pop()
         obj_ref = self.pop()
         if isinstance(obj_ref, Int):
@@ -223,11 +235,6 @@ class Frame(VM_Obj):
             self.push(val)
         else:
             raise NotImplementedError()
-
-
-    def dup(self):
-        val = self.stack[-1]
-        self.push(val)
 
     def jump(self):
         pass
@@ -258,24 +265,20 @@ class Frame(VM_Obj):
 
 class VirtualMachine(object):
 
-    def __init__(self, instructions, args = None):
+    def __init__(self, instructions, fn_var_map, args = None):
         self.instructions = instructions
         self.stack = []
+        self.fn_var_map = fn_var_map
         self.heap = []
 
         if args:
             [self.stack.append(Int(arg)) for arg in args]
 
-
-
-    def interp(self):
-        main_frame = Frame(-1, [], None)
-        self.stack.append(main_frame)
-        return self._interp(self.instructions, main_frame)
-
-    def _interp(self, bytecode, frame):
-        # Begin by creating the stack frame for the main method and pushing
-        # on stack.
+    def interp(self, bytecode):
+        main_fn_size = self.fn_var_map[0] # FIXME: VERY HACKY
+        main_vars = [None] * main_fn_size
+        frame = Frame(len(bytecode) + 1, main_vars, None)
+        self.stack.append(frame)
         pc = 0
 
         # Begin program interpreter loop
@@ -314,18 +317,18 @@ class VirtualMachine(object):
             elif instr == NEW:
                 frame.new(self)
             elif instr == GET_FIELD:
-                frame.get_field(self)
+                frame.get_field(str(bytecode[pc+1]), self)
             elif instr == SET_FIELD:
-                frame.set_field(self)
-            elif instr == DUP:
-                frame.dup()
+                frame.set_field(str(bytecode[pc+1]), self)
             elif instr == SWAP:
                 frame.swap()
             elif instr == NEQ:
                 frame.neq()
             elif instr == CALL:
-                frame = self.function_call(frame, pc)
-                pc = int(bytecode[pc + 1])
+                caller_address = int(bytecode[pc + 1])
+                var_size = self.fn_var_map[caller_address]
+                frame = self.function_call(frame, pc, var_size)
+                pc = caller_address
                 continue
             elif instr == RET:
                 ret_address, caller_frame, ret_val = frame.ret()
@@ -337,7 +340,7 @@ class VirtualMachine(object):
                 pc = ret_address
                 continue
             elif instr == VAR:
-                frame.var()
+                frame.var(int(bytecode[pc + 1]))
             elif instr == ASSIGN:
                 frame.assign()
             elif instr == CONST_STR:
@@ -351,7 +354,7 @@ class VirtualMachine(object):
 
         return self.stack.pop()
 
-    def function_call(self, caller_frame, pc):
+    def function_call(self, caller_frame, pc, var_size):
         # Invoked on the presence of the CALL opcode.
         # This method will take the values pushed on the caller's stack before
         # the CALL as arguments to the callee and place them inside the newly

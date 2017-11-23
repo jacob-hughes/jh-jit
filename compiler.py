@@ -3,6 +3,7 @@
 import sys
 from jhvm.parser import parse_input
 from jhvm.genast import generate_bytecode
+from jhvm.opcodes import EOB
 
 def usage():
     print >> sys.stderr, 'Usage: compiler.py filename.jh'
@@ -20,12 +21,15 @@ def main():
         source_code = f.read()
 
     ast = parse_input(source_code)
-    bytecode = generate_bytecode(ast)
+    bytecode, var_count = generate_bytecode(ast)
 
     outname = filename[:-len('.jh')]
     with open(outname, 'wb') as f:
         for op in bytecode:
             f.write('%s\n' % op)
+        f.write('%s\n' % EOB)
+        for k, v in var_count.items():
+            f.write('%s,%s\n' % (k, v))
     print '%s successfully compiled.' % outname
 
 if __name__ == '__main__':

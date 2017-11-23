@@ -3,7 +3,18 @@
 from __future__ import absolute_import
 from jhvm.opcodes import *
 
-class Node(object):
+from rply.token import BaseBox
+
+COUNT = 0
+
+def next_label():
+    global COUNT
+    nxt = COUNT
+    COUNT += 1
+    return nxt
+
+class Node(BaseBox):
+
     def __repr__(self):
         return '{}({})'.format(self.__class__.__name__, self.__dict__)
 
@@ -20,20 +31,41 @@ class Program(Node):
     def __init__(self, functions):
         self.functions = functions
 
-    def compile(self, gen):
-        for function in self.functions:
-            function.compile(gen)
+    def _compile(self, gen):
+        self.functions.compile(gen)
 
 class Function(Node):
-    def __init__(self, name, args, body):
+    def __init__(self, name, arg_listbox, body):
         self.name = name
-        self.args = args
+        self.arg_listbox = arg_listbox
         self.body = body
 
     def _compile(self, gen):
-        gen.register_function(self.name, [arg.name for arg in self.args])
+        arg_names = [arg.name for arg in self.arg_listbox.items]
+        gen.register_function(self.name, arg_names)
         gen.emit_label(self.name + ':')
         self.body.compile(gen)
+
+class ListBox(Node):
+    def __init__(self, items):
+        self.items = items
+
+    def extend(self, other):
+        assert isinstance(other, ListBox)
+        self.items.extend(other.items)
+        return self
+
+    def _compile(self, gen):
+        for item in self.items:
+            item.compile(gen)
+
+    def _compile_reversed(self, gen):
+        for item in reversed(self.items):
+            item.compile(gen)
+
+    def get_length(self):
+        return len(self.items)
+
 
 class Statement(Node):
     pass
@@ -43,14 +75,15 @@ class If(Statement):
         self.cond = cond
         self.then_body = then_body
 
-        self._then = 'then_%s' % id(self)
-        self._exit = 'exit_%s' % id(self)
+        label_no = next_label()
+        self._then = 'then_%s' % label_no
+        self._exit = 'exit_%s' % label_no
         self._then_def = self._then + ':'
         self._exit_def = self._exit + ':'
 
     def _compile(self, gen):
         self.cond.compile(gen)
-        gen.emit_bc(JUMP_IF_FALSE, self._exit)
+        gen.emit_bc_arg_str(JUMP_IF_FALSE, self._exit)
         self.then_body.compile(gen)
         gen.emit_label(self._exit_def)
 
@@ -60,18 +93,19 @@ class IfElse(Statement):
         self.then_body = then_body
         self.else_body = else_body
 
-        self._then = 'then_%s' % id(self)
-        self._else = 'else_%s' % id(self)
-        self._exit = 'exit_%s' % id(self)
+        label_no = next_label()
+        self._then = 'then_%s' % label_no
+        self._else = 'else_%s' % label_no
+        self._exit = 'exit_%s' % label_no
         self._then_def = self._then + ':'
         self._else_def = self._else + ':'
         self._exit_def = self._exit + ':'
 
     def _compile(self, gen):
         self.cond.compile(gen)
-        gen.emit_bc(JUMP_IF_FALSE, self._else)
+        gen.emit_bc_arg_str(JUMP_IF_FALSE, self._else)
         self.then_body.compile(gen)
-        gen.emit_bc(JUMP, self._exit)
+        gen.emit_bc_arg_str(JUMP, self._exit)
         gen.emit_label(self._else_def)
         self.else_body.compile(gen)
         gen.emit_label(self._exit_def)
@@ -89,13 +123,11 @@ class Return(Statement):
         self.exp.compile(gen)
         gen.emit_bc(RET)
 
-class Block(Node):
-    def __init__(self, code):
-        self.code = code
+class Block(ListBox):
+    pass
 
-    def _compile(self, gen):
-        for statement in self.code:
-            statement.compile(gen)
+
+
 
 class Exp(Node):
     pass
@@ -106,12 +138,18 @@ class Call(Exp):
         self.args = args
 
     def _compile(self, gen):
-        for arg in reversed(self.args):
-            arg.compile(gen)
-        gen.emit_bc(CONST_INT, len(self.args))
-        gen.emit_bc(CALL, self.name)
+        self.args._compile_reversed(gen)
+        gen.emit_bc_arg_int(CONST_INT, self.args.get_length())
+        gen.emit_bc_arg_str(CALL, self.name)
 
-class BinOp(Exp):
+class BinOp(Node):
+    def __init__(self, op_name):
+        self.op_code = BINOP_TO_OPCODE[op_name]
+
+    def _compile(self, gen):
+        gen.emit_bc(self.op_code)
+
+class BinExp(Exp):
     def __init__(self, op, lhs, rhs):
         self.op = op
         self.lhs = lhs
@@ -120,7 +158,7 @@ class BinOp(Exp):
     def _compile(self, gen):
         self.lhs.compile(gen)
         self.rhs.compile(gen)
-        gen.emit_bc(BINOP_TO_OPCODE[self.op])
+        self.op.compile(gen)
 
 class For(Node):
     def __init__(self, start, cond, step, body):
@@ -129,8 +167,9 @@ class For(Node):
         self.step = step
         self.body = body
 
-        self._entry = 'entry_%s' % id(self)
-        self._exit = 'exit_%s' % id(self)
+        label_no = next_label()
+        self._entry = 'entry_%s' % label_no
+        self._exit = 'exit_%s' % label_no
         self._entry_def = self._entry + ':'
         self._exit_def = self._exit + ':'
 
@@ -138,10 +177,10 @@ class For(Node):
         self.start.compile(gen)
         gen.emit_label(self._entry_def)
         self.cond.compile(gen)
-        gen.emit_bc(JUMP_IF_FALSE, self._exit)
+        gen.emit_bc_arg_str(JUMP_IF_FALSE, self._exit)
         self.body.compile(gen)
         self.step.compile(gen)
-        gen.emit_bc(JUMP, self._entry)
+        gen.emit_bc_arg_str(JUMP, self._entry)
         gen.emit_label(self._exit_def)
 
 class Var(Node):
@@ -149,8 +188,7 @@ class Var(Node):
         self.name = name
 
     def _compile(self, gen):
-        gen.emit_bc(CONST_INT, gen.register_num_for_var(self.name))
-        gen.emit_bc(VAR)
+        gen.emit_bc_arg_int(VAR, gen.register_num_for_var(self.name))
 
 class Assign(Exp):
     def __init__(self, name, exp):
@@ -158,7 +196,7 @@ class Assign(Exp):
         self.exp = exp
 
     def _compile(self, gen):
-        gen.emit_bc(CONST_INT, gen.register_num_for_var(self.name))
+        gen.emit_bc_arg_int(CONST_INT, gen.register_num_for_var(self.name))
         self.exp.compile(gen)
         gen.emit_bc(ASSIGN)
 
@@ -167,7 +205,7 @@ class Number(Exp):
         self.value = value
 
     def _compile(self, gen):
-        gen.emit_bc(CONST_INT, self.value)
+        gen.emit_bc_arg_int(CONST_INT, self.value)
 
 class FieldAccessor(Exp):
     def __init__(self, obj_var, field):
@@ -175,9 +213,8 @@ class FieldAccessor(Exp):
         self.field = field
 
     def _compile(self, gen):
-        gen.emit_bc(CONST_INT, gen.register_num_for_var(self.obj_var))
-        gen.emit_bc(CONST_STR, self.field)
-        gen.emit_bc(GET_FIELD)
+        self.obj_var.compile(gen)
+        gen.emit_bc_arg_str(GET_FIELD, self.field)
 
 class FieldSetter(Exp):
     def __init__(self, obj_var, field, exp):
@@ -186,10 +223,9 @@ class FieldSetter(Exp):
         self.exp = exp
 
     def _compile(self, gen):
-        gen.emit_bc(CONST_INT, gen.register_num_for_var(self.obj_var))
-        gen.emit_bc(CONST_STR, self.field)
+        self.obj_var.compile(gen)
         self.exp.compile(gen)
-        gen.emit_bc(SET_FIELD)
+        gen.emit_bc_arg_str(SET_FIELD, self.field)
 
 class Obj(Exp):
     def __init__(self, fields, values):
@@ -198,6 +234,4 @@ class Obj(Exp):
 
     def _compile(self, gen):
         gen.emit_bc(NEW)
-
-
 

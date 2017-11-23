@@ -10,18 +10,27 @@ def generate_bytecode(ast):
     ast.compile(context)
     return context.get_bytecode()
 
+
 class GeneratorContext(object):
 
     def __init__(self):
         self.code = []
         self.func_names = []
         self.func_vars = []
-        pass
 
-    def emit_bc(self, opcode, arg = None):
-        self.code.append(opcode)
-        if arg is not None:
-            self.code.append(arg)
+    def emit_bc(self, opcode):
+        self.code.append(str(opcode))
+
+    def emit_bc_arg_int(self, opcode, arg):
+        conv_opcode = str(opcode)
+        conv_arg = str(arg)
+        assert isinstance(conv_opcode, str)
+        assert isinstance(conv_arg, str)
+        self.code.extend([conv_opcode, conv_arg])
+
+    def emit_bc_arg_str(self, opcode, arg):
+        conv_opcode = str(opcode)
+        self.code.extend([conv_opcode, arg])
 
     def register_function(self, name, args):
         self.func_names.append(name)
@@ -43,22 +52,34 @@ class GeneratorContext(object):
     def emit_label(self, label):
         self.code.append(label)
 
-    def _replace_labels(self):
+    def _get_func_arg_count(self):
+        var_count = [len(f_vars) for f_vars in self.func_vars]
+        return {k:v for k,v in zip(self.func_names, var_count)}
+
+
+    def _remove_func_names(self):
         # Remove statically function and loop labels from bytecode and
         # replace them with index of bytecode instr. to jump to.
         labels = {}
         for i, instr in enumerate(self.code):
-            if isinstance(instr, str):
-                if instr.endswith(':'):
-                    del self.code[i]
-                    labels.update({instr[:-1] : i})
+            if instr.endswith(':'):
+                del self.code[i]
+                labels.update({instr[:-1] : str(i)})
         for i, instr in enumerate(self.code):
             try:
-                if isinstance(instr, str):
-                    self.code[i] = labels[instr]
+                self.code[i] = labels[instr]
             except KeyError: pass
 
+        return labels
 
     def get_bytecode(self):
-        self._replace_labels()
-        return self.code
+        print self.func_vars
+        var_count = self._get_func_arg_count()
+        labels = self._remove_func_names()
+        var_count_for_call_pc = {}
+        for fn_name, count in var_count.items():
+            fn_jump_loc = int(labels[fn_name])
+            var_count_for_call_pc[fn_jump_loc] = count
+
+        print var_count_for_call_pc
+        return self.code, var_count_for_call_pc

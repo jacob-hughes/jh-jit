@@ -14,12 +14,14 @@ class TestVirtualMachine(unittest.TestCase):
 
     def compile(self, source):
         ast = parse_input(source)
-        bytecode = generate_bytecode(ast)
+        print ast
+        bytecode, fn_var_map = generate_bytecode(ast)
         bytecode = [str(op) for op in bytecode]
-        return bytecode
+        print fn_var_map
+        return bytecode, fn_var_map
 
-    def run_prog(self, bytecode):
-        machine = VM(bytecode)
+    def run_prog(self, bytecode, fn_var_map):
+        machine = VM(bytecode, fn_var_map)
         return machine.interp()
 
     def test_simple_function_call(self):
@@ -34,8 +36,8 @@ class TestVirtualMachine(unittest.TestCase):
 
         """
 
-        bytecode = self.compile(source)
-        res = self.run_prog(bytecode)
+        bytecode, fn_var_map = self.compile(source)
+        res = self.run_prog(bytecode, fn_var_map)
         self.assertEqual(res, Int(55))
 
     def test_multilevel_function_call(self):
@@ -53,8 +55,8 @@ class TestVirtualMachine(unittest.TestCase):
             }
         """
 
-        bytecode = self.compile(source)
-        res = self.run_prog(bytecode)
+        bytecode, fn_var_map = self.compile(source)
+        res = self.run_prog(bytecode, fn_var_map)
         self.assertEqual(res, Int(4))
 
     def test_assign_same_name(self):
@@ -67,8 +69,8 @@ class TestVirtualMachine(unittest.TestCase):
                 return x
             }
         """
-        bytecode = self.compile(source)
-        res = self.run_prog(bytecode)
+        bytecode, fn_var_map = self.compile(source)
+        res = self.run_prog(bytecode, fn_var_map)
         self.assertEqual(res, Int(60))
 
     def test_for_loop(self):
@@ -82,8 +84,8 @@ class TestVirtualMachine(unittest.TestCase):
             }
         """
 
-        bytecode = self.compile(source)
-        res = self.run_prog(bytecode)
+        bytecode, fn_var_map = self.compile(source)
+        res = self.run_prog(bytecode, fn_var_map)
         self.assertEqual(res, Int(110))
 
     def test_simple_object(self):
@@ -94,8 +96,8 @@ class TestVirtualMachine(unittest.TestCase):
                 return x.hello
             }
         """
-        bytecode = self.compile(source)
-        res = self.run_prog(bytecode)
+        bytecode, fn_var_map = self.compile(source)
+        res = self.run_prog(bytecode, fn_var_map)
         self.assertEqual(res, Int(5))
 
     def test_object_across_funcs(self):
@@ -111,8 +113,8 @@ class TestVirtualMachine(unittest.TestCase):
                 return x.hello + x.bye
             }
         """
-        bytecode = self.compile(source)
-        res = self.run_prog(bytecode)
+        bytecode, fn_var_map = self.compile(source)
+        res = self.run_prog(bytecode, fn_var_map)
         self.assertEqual(res, Int(20))
 
     def test_if_statement(self):
@@ -124,8 +126,8 @@ class TestVirtualMachine(unittest.TestCase):
                 return x
             }
         """
-        bytecode = self.compile(source)
-        res = self.run_prog(bytecode)
+        bytecode, fn_var_map = self.compile(source)
+        res = self.run_prog(bytecode, fn_var_map)
         self.assertEqual(res, Int(1))
 
     def test_if_else_statement(self):
@@ -147,8 +149,8 @@ class TestVirtualMachine(unittest.TestCase):
                 return x
             }
         """
-        bytecode = self.compile(source)
-        res = self.run_prog(bytecode)
+        bytecode, fn_var_map = self.compile(source)
+        res = self.run_prog(bytecode, fn_var_map)
         self.assertEqual(res, Int(3))
 
 

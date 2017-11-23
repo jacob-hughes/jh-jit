@@ -5,8 +5,8 @@ from __future__ import absolute_import
 import os
 import sys
 from jhvm.vm import VirtualMachine
+from jhvm.opcodes import EOB
 from rpython.rlib.streamio import open_file_as_stream
-
 def usage():
     print 'Usage: target-vm compiled-bytecode'
     return 1
@@ -16,14 +16,23 @@ def entry_point(argv):
         usage()
 
     filename = argv[1]
-    contents = open_file_as_stream(argv[1]).readall()
+    lines = open_file_as_stream(argv[1]).readall().splitlines()
     bytecode = []
-    for line in contents.splitlines():
+    break_line = 0
+    for i, line in enumerate(lines):
+        if line == EOB:
+            break_line = i
+            break
         bytecode.append(line)
 
-    machine = VirtualMachine(bytecode)
-    res = machine.interp()
-    print res.value
+    var_count = {}
+    for line in lines[break_line + 1:]:
+        k,v = line.split(',')
+        var_count.update({int(k):int(v)})
+
+    machine = VirtualMachine(bytecode, var_count)
+    res = machine.interp(bytecode)
+    print res
     return 0
 
 def target(*args):
