@@ -22,7 +22,7 @@ class TestVirtualMachine(unittest.TestCase):
 
     def run_prog(self, bytecode, fn_var_map):
         machine = VM(bytecode, fn_var_map)
-        return machine.interp()
+        return machine.interp(bytecode)
 
     def test_simple_function_call(self):
         source = """
@@ -59,19 +59,6 @@ class TestVirtualMachine(unittest.TestCase):
         res = self.run_prog(bytecode, fn_var_map)
         self.assertEqual(res, Int(4))
 
-    def test_assign_same_name(self):
-        source = """
-            fn main() {
-                y = 5;
-                z = 20;
-                x = y = z + 10;
-                x = x + y;
-                return x
-            }
-        """
-        bytecode, fn_var_map = self.compile(source)
-        res = self.run_prog(bytecode, fn_var_map)
-        self.assertEqual(res, Int(60))
 
     def test_for_loop(self):
         source = """

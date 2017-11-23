@@ -112,6 +112,9 @@ class Int(VM_Objspace):
         assert isinstance(other, Int)
         return Bool(self.int_val < other.int_val)
 
+    def __eq__(self, other):
+        return isinstance(other, self.__class__) and self.int_val == other.int_val
+
 class StrLiteral(VM_Objspace):
     _immutable_fields_ = ['str_val']
     def __init__(self, str_val):
@@ -142,29 +145,17 @@ class Frame(VM_Obj):
     #     return 'F: Stack{} Vars{}'.format(self.stack, self.variables)
 
     def pop(self):
-        index = jit.hint(self.sp, promote=True) -1
+        index = self.sp - 1
         assert index >= 0
         val = self.stack[index]
         self.stack[index] = None
         self.sp = index
         return val
 
-    def push(self, val):
-        index = jit.hint(self.sp, promote=True)
-        self.stack[index] = val
+    def push(self, obj):
+        assert isinstance(obj, VM_Obj)
+        self.stack[self.sp] = obj
         self.sp += 1
-
-    def const_int(self, val):
-        index = jit.hint(self.sp, promote=True)
-        self.stack[index] = Int(int(val))
-        self.sp += 1
-
-    def const_str(self, val):
-        index = jit.hint(self.sp, promote=True)
-        assert isinstance(val, str)
-        self.stack[index] = StrLiteral(int(val))
-        self.sp += 1
-        assert self.sp < 128
 
     def add(self):
         o2 = self.pop()
@@ -290,7 +281,7 @@ class VirtualMachine(object):
             instr = bytecode[pc]
 
             if instr == CONST_INT:
-                frame.const_int(bytecode[pc + 1])
+                frame.push(Int(int(bytecode[pc + 1])))
             elif instr == POP:
                 frame.pop()
             elif instr == JUMP_IF_TRUE:
@@ -344,7 +335,7 @@ class VirtualMachine(object):
             elif instr == ASSIGN:
                 frame.assign()
             elif instr == CONST_STR:
-                frame.const_str(bytecode[pc + 1])
+                frame.push(StrLiteral(bytecode[pc + 1]))
             elif instr == EXIT:
                 break
             else:
