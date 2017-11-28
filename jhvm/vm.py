@@ -133,7 +133,7 @@ class Frame(VM_Obj):
         self = jit.hint(self, access_directly=True, fresh_virtualizable=True)
         self.return_address = return_address
         self.variables = variables
-        self.stack = [None] * 128
+        self.stack = [None] * 10
         self.sp = 0
         self.caller_frame = caller_frame
         self.next_frame = None
